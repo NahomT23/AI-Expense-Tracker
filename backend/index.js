@@ -274,15 +274,13 @@ app.post("/api/endpoint", (req, res) => {
   res.json({ message: "Input received", input });
 });
 
-// Serve static files from the frontend
 app.use(express.static(path.join(__dirname, "frontend/dist")));
 
 app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "frontend/dist", "index.html"));
 });
 
-// Use port from environment or default to 4000
-const port = process.env.PORT || 4000;
+const port =  4000;
 
 await new Promise((resolve) => httpServer.listen({ port }, resolve));
 await connectDB();
