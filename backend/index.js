@@ -15,7 +15,10 @@ import { connectDB } from "./db/connectDB.js";
 import { configurePassport } from "./passport/passport.config.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import bodyParser from 'body-parser'
+import path from "path";
 
+
+const __dirname = path.resolve()
 
 configDotenv();
 configurePassport();
@@ -100,6 +103,13 @@ app.post('/api/endpoint', (req, res) => {
   console.log('Received input:', input);
   res.json({ message: 'Input received', input });
 });
+
+
+app.use(express.static(path.join(__dirname, "frontend/dist")))
+
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "frontend/dist", "index.html"))
+})
 
 await new Promise((resolve) => httpServer.listen({ port: 4000 }, resolve));
 await connectDB();
