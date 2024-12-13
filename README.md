@@ -1,4 +1,1 @@
-# EXPENSE-TRACKER
-
-# AI-Expense-Tracker
-# AI-Expense-Tracker
+A modern, feature-rich Expense Tracker built with React, GraphQL, Clerk, Tailwind CSS, shadCN UI, and powered by Gemini AI API. This app allows users to manage their income, savings, and budget with real-time visualizations using different graphs and charts. Additionally, it provides AI-generated advice based on user input to help with financial planning.
