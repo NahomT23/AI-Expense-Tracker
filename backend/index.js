@@ -15,7 +15,10 @@ import { connectDB } from "./db/connectDB.js";
 import { configurePassport } from "./passport/passport.config.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import bodyParser from "body-parser";
+import User from "./models/user.model.js";
+import Transaction from './models/transaction.model.js'
 import path from "path";
+
 
 configDotenv();
 configurePassport();
@@ -82,7 +85,7 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(bodyParser.json());
 
-// Enhanced AI Advice Endpoint
+// AI Advice Endpoint
 app.post("/api/generate", async (req, res) => {
   try {
     const { transactions } = req.body;
@@ -107,7 +110,7 @@ app.post("/api/generate", async (req, res) => {
       return acc;
     }, {});
 
-    const locations = [...new Set(transactions.map(t => t.location))].filter(l => l !== "Unknown");
+
     
     const exampleTransactions = transactions
       .slice(0, 5)
@@ -122,8 +125,6 @@ app.post("/api/generate", async (req, res) => {
     Spending Patterns:
     - Most Frequent Category: ${Object.entries(categoryFrequency).sort((a, b) => b[1] - a[1])[0][0]}
     - Payment Methods: ${Object.entries(paymentMethods).map(([k, v]) => `${k} (${v} transactions)`).join(', ')}
-    ${locations.length > 0 ? `- Spending Locations: ${locations.join(', ')}` : ''}
-
     Recent Transactions:
     ${exampleTransactions.map(t => 
       `- ${new Date(t.date).toLocaleDateString()}: ${t.description} (${t.category}, ${t.paymentType}) - $${t.amount}`
@@ -148,6 +149,71 @@ app.post("/api/generate", async (req, res) => {
   }
 });
 
+
+
+app.post("/api/chat", async (req, res) => {
+  try {
+    const user = req.user;
+    const { message } = req.body;
+    if (!user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const text = (message?.trim() || '').toLowerCase();
+    const userName = user.name || 'your'; 
+
+    // Handle identity questions first
+    const identityPhrases = ['who are you', 'what are you', 'your name', 'they help', 'who is this'];
+    if (identityPhrases.some(phrase => text.includes(phrase))) {
+      return res.json({ response: `I'm ${userName}'s financial assistant. How can I help you with your financial transactions and patterns?` });
+    }
+
+    // Expanded financial keywords with word boundary matching
+    const financeKeywords = [
+      'budget', 'expense', 'spent', 'spend', 'investment', 'saving', 
+      'income', 'transactions', 'spending', 'financial', 'finance',
+      'pattern', 'health', 'analyze', 'money', 'cash', 'debt',
+      'loan', 'credit', 'debit', 'payment', 'category', 'net worth',
+      'balance', 'forecast', 'trend', 'advice', 'save', 'amount'
+    ];
+
+    const keywordPattern = new RegExp(`\\b(${financeKeywords.join('|')})\\b`, 'i');
+    const isFinanceQuery = keywordPattern.test(text);
+
+    if (!isFinanceQuery) {
+      return res.json({ response: "I'm sorry, I can only discuss your financial transactions and patterns." });
+    }
+
+    // Fetch transactions
+    const transactions = await Transaction.find({ userId: user._id })
+      .sort({ date: -1 })
+      .limit(100)
+      .lean();
+
+    if (!transactions.length) {
+      return res.json({ response: "I don't have any transactions to analyze yet." });
+    }
+
+    // Enhanced prompt with user context
+    const prompt = `You are ${userName}'s financial advisor. Respond to questions using these transactions:
+${transactions.map(t => 
+  `- ${new Date(t.date).toLocaleDateString()}: ${t.description} (${t.category}, ${t.paymentType}) - $${t.amount}`
+).join('\n')}
+
+Current query: "${text}"
+Provide specific, numerical insights when possible. For budget questions, compare income vs expenses. For spending patterns, identify top categories.`;
+
+    const result = await model.generateContent(prompt);
+    const aiRes = await (await result.response).text();
+    
+    res.json({ response: aiRes });
+  } catch (error) {
+    console.error("Chatbot error:", error);
+    res.status(500).json({ response: "Error processing your request." });
+  }
+});
+
+
 // Static files and client routing
 app.use(express.static(path.join(__dirname, "frontend/dist")));
 app.get("*", (req, res) => {
@@ -160,3 +226,4 @@ await new Promise((resolve) => httpServer.listen({ port }, resolve));
 await connectDB();
 
 console.log(`🚀 Server ready at http://localhost:${port}/graphql`);
+
