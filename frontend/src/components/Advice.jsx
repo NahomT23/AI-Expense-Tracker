@@ -99,7 +99,8 @@ const Advice = () => {
       );
 
       // Send to AI endpoint
-      const response = await fetch('http://localhost:4000/api/generate', {
+        // REMEMBER TO CHANGE IT TO LOCALHOST 4000 HWEN TESTING
+      const response = await fetch('https://ai-expense-tracker-4.onrender.com/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
