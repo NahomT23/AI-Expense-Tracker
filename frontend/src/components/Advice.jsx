@@ -1,10 +1,22 @@
 import { useQuery, useSubscription, gql } from '@apollo/client';
 import toast from 'react-hot-toast';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { GET_TRANSACTIONS } from '../graphql/queries/transaction.query';
-import { FaRegCopy, FaMicrophone } from "react-icons/fa";
+import { FaRegCopy, FaMicrophone, FaRedoAlt } from "react-icons/fa";
 
-// Define the subscription for new transactions
+// Color map for the totals cards
+const categoryColorMap = {
+  budget:  "from-green-500 to-green-500",  // Lighter green
+  expense: "from-pink-800 to-pink-600",    // Original pink
+  income:  "from-blue-500 to-blue-400",    // Darker blue
+};
+
+// Helper to add commas for thousands, millions, etc.
+const formatNumber = (num) => {
+  if (typeof num !== 'number') return num;
+  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+};
+
 const ON_NEW_TRANSACTION = gql`
   subscription OnNewTransaction {
     newTransaction {
@@ -19,7 +31,6 @@ const ON_NEW_TRANSACTION = gql`
   }
 `;
 
-// Define the subscription for deleted transactions
 const ON_DELETE_TRANSACTION = gql`
   subscription OnDeleteTransaction {
     deleteTransaction {
@@ -32,162 +43,209 @@ const ON_DELETE_TRANSACTION = gql`
 
 const Advice = () => {
   const [aiAdvice, setAiAdvice] = useState('');
-  const [isAdviceGenerated, setIsAdviceGenerated] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const { loading, data, refetch } = useQuery(GET_TRANSACTIONS);
 
-  const [investment, setInvestment] = useState(0);
-  const [expense, setExpense] = useState(0);
-  const [saving, setSaving] = useState(0);
-  const [missingCategory, setMissingCategory] = useState('');
+  useSubscription(ON_NEW_TRANSACTION, { onSubscriptionData: refetch });
+  useSubscription(ON_DELETE_TRANSACTION, { onSubscriptionData: refetch });
 
-  useSubscription(ON_NEW_TRANSACTION, {
-    onSubscriptionData: () => {
-      refetch(); // Refetch the transactions data when a new transaction is received
-    },
-  });
+  const analyzeTransactions = () => {
+    if (!data?.transactions) return {};
 
-  useSubscription(ON_DELETE_TRANSACTION, {
-    onSubscriptionData: () => {
-      refetch(); // Refetch the transactions data when a transaction is deleted
-    },
-  });
-
-  useEffect(() => {
-    if (data && data.transactions) {
-      const totalInvestment = data.transactions
-        .filter((t) => t.category === 'investment')
-        .reduce((sum, t) => sum + t.amount, 0);
-
-      const totalExpense = data.transactions
-        .filter((t) => t.category === 'expense')
-        .reduce((sum, t) => sum + t.amount, 0);
-
-      const totalSaving = data.transactions
-        .filter((t) => t.category === 'saving')
-        .reduce((sum, t) => sum + t.amount, 0);
-
-      setInvestment(totalInvestment);
-      setExpense(totalExpense);
-      setSaving(totalSaving);
-
-      // Check if any category is now empty after a transaction update
-      if (investment > 0 && totalInvestment === 0) {
-        setAiAdvice(''); // Clear AI advice
-        setMissingCategory('investment');
-        toast.error('Investment category is now empty. Please add an investment.');
-      } else if (expense > 0 && totalExpense === 0) {
-        setAiAdvice(''); // Clear AI advice
-        setMissingCategory('expense');
-        toast.error('Expense category is now empty. Please add an expense.');
-      } else if (saving > 0 && totalSaving === 0) {
-        setAiAdvice(''); // Clear AI advice
-        setMissingCategory('saving');
-        toast.error('Saving category is now empty. Please add a saving.');
-      } else {
-        setMissingCategory(''); // Reset missing category if all are present
+    return data.transactions.reduce((acc, t) => {
+      if (!t) return acc;
+      if (t.category === 'investment') acc.investment += t.amount;
+      if (t.category === 'expense')    acc.expense    += t.amount;
+      if (t.category === 'saving')     acc.saving     += t.amount;
+      acc.paymentMethods[t.paymentType] = (acc.paymentMethods[t.paymentType] || 0) + 1;
+      if (t.location && t.location !== 'Unknown') {
+        acc.locations.add(t.location);
       }
-    }
-  }, [data]);
-
-  useEffect(() => {
-    if (isAdviceGenerated && investment > 0 && expense > 0 && saving > 0) {
-      handleGenerateAdvice();
-    }
-  }, [investment, expense, saving]);
+      return acc;
+    }, { 
+      investment: 0, 
+      expense:    0, 
+      saving:     0,
+      paymentMethods: {},
+      locations: new Set()
+    });
+  };
 
   const handleGenerateAdvice = async () => {
-    if (investment === 0) {
-      toast.error('Please add an Income');
-    } else if (expense === 0) {
-      toast.error('Please add an Expense');
-    } else if (saving === 0) {
-      toast.error('Please add a Budget');
-    } else {
-      try {
-        const response = await fetch('http://localhost:4000/api/generate', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ investment, expense, saving }),
-        });
+    if (!data?.transactions?.length) {
+      toast.error('No transactions to analyze');
+      return;
+    }
 
-        const result = await response.json();
-        if (response.ok) {
-          setAiAdvice(result.aiResponse);
-          if (isAdviceGenerated) {
-            toast.success('Advice updated successfully');
-          } else {
-            setIsAdviceGenerated(true);
-            toast.success('Advice generated successfully');
-          }
-        } else {
-          console.error('Error:', result.error || 'Failed to get advice');
+    setIsGenerating(true);
+    try {
+      // Clean up dates
+      const cleanedTransactions = data.transactions.map(t => {
+        if (!t || !t.date) {
+          console.warn('Invalid transaction or missing date:', t);
+          return { ...t, date: new Date().toISOString() };
         }
-      } catch (error) {
-        console.error('Request failed:', error);
-      }
+        const d = new Date(t.date);
+        if (isNaN(d)) {
+          console.warn(`Invalid date for transaction ${t.id}:`, t.date);
+          return { ...t, date: new Date().toISOString() };
+        }
+        return { ...t, date: d.toISOString() };
+      });
+
+      // Identify gym expenses
+      const gymExpenses = cleanedTransactions.filter(t =>
+        t.category === 'expense' && /gym/i.test(t.description)
+      );
+
+      // Send to AI endpoint
+      const response = await fetch('http://localhost:4000/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transactions: cleanedTransactions,
+          gymExpenses,
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to generate advice');
+
+      const { aiResponse } = await response.json();
+      setAiAdvice(aiResponse);
+      toast.success('Personalized advice generated!');
+    } catch (error) {
+      console.error('Advice Error:', error);
+      toast.error(error.message);
+    } finally {
+      setIsGenerating(false);
     }
   };
 
   const handleCopyAdvice = () => {
-    if (aiAdvice) {
-      navigator.clipboard.writeText(aiAdvice);
-      toast.success('AI advice copied to clipboard');
-    }
+    navigator.clipboard.writeText(aiAdvice);
+    toast.success('Copied to clipboard!');
   };
 
   const handleSpeakAdvice = () => {
-    if (aiAdvice) {
-      const utterance = new SpeechSynthesisUtterance(aiAdvice);
-      speechSynthesis.speak(utterance);
-      toast.success('Listening to AI advice');
-    }
+    const utterance = new SpeechSynthesisUtterance(aiAdvice);
+    speechSynthesis.speak(utterance);
+    toast.success('Reading advice aloud...');
   };
 
-  if (loading) return <div>Loading...</div>;
+  if (loading) {
+    return <div className="text-center p-4">Analyzing your transactions...</div>;
+  }
+
+  const stats = analyzeTransactions();
 
   return (
-    <div className="p-4 max-w-lg mx-auto">
-      <h1 className="text-2xl font-bold mb-4 text-center">
-        {aiAdvice ? 'Your AI Generated Financial Advice' : 'Generate Financial Advice'}
+    <div className="p-4 max-w-2xl mx-auto">
+      <h1 className="text-2xl font-bold mb-6 text-center text-purple-400">
+        Smart Financial Advisor
       </h1>
 
-      {missingCategory && (
-        <p className="text-center">Please add the {missingCategory} to get AI advice</p>
-      )}
+      <div className="mb-8 p-4 bg-gray-800 rounded-xl shadow-lg">
+        <h2 className="text-xl font-semibold mb-4">Transaction Insights</h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          {/* Total Transactions */}
+          <div className="p-3 bg-gray-700 rounded-lg">
+            <p className="text-sm text-gray-300">Total Transactions</p>
+            <p className="text-2xl font-bold">{data.transactions.length}</p>
+          </div>
 
-      {!aiAdvice && !missingCategory && (investment > 0 || expense > 0 || saving > 0) && !isAdviceGenerated && (
+          {/* Primary Category */}
+          <div className="p-3 bg-gray-700 rounded-lg">
+            <p className="text-sm text-gray-300">Primary Category</p>
+            <p className="text-2xl font-bold capitalize">
+              {Object.entries({
+                investment: stats.investment,
+                expense:    stats.expense,
+                saving:     stats.saving
+              })
+                .sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A'}
+            </p>
+          </div>
+
+          {/* Preferred Payment */}
+          <div className="p-3 bg-gray-700 rounded-lg">
+            <p className="text-sm text-gray-300">Preferred Payment</p>
+            <p className="text-2xl font-bold capitalize">
+              {Object.entries(stats.paymentMethods)
+                .sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A'}
+            </p>
+          </div>
+
+          {/* Total Income (gradient) */}
+          <div className={`p-3 rounded-lg bg-gradient-to-r ${categoryColorMap.income}`}>
+            <p className="text-sm text-gray-100">Total Income</p>
+            <p className="text-2xl font-bold text-white">
+              ${formatNumber(stats.investment)}
+            </p>
+          </div>
+
+          {/* Total Budget (gradient) */}
+          <div className={`p-3 rounded-lg bg-gradient-to-r ${categoryColorMap.budget}`}>
+            <p className="text-sm text-gray-100">Total Budget</p>
+            <p className="text-2xl font-bold text-white">
+              ${formatNumber(stats.saving)}
+            </p>
+          </div>
+
+          {/* Total Expenses (gradient) */}
+          <div className={`p-3 rounded-lg bg-gradient-to-r ${categoryColorMap.expense}`}>
+            <p className="text-sm text-gray-100">Total Expenses</p>
+            <p className="text-2xl font-bold text-white">
+              ${formatNumber(stats.expense)}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {!aiAdvice ? (
         <button
           onClick={handleGenerateAdvice}
-          className="w-full py-2 bg-gradient-to-br from-pink-500 to-pink-600 text-white font-bold rounded hover:bg-gradient-to-bl"
+          disabled={isGenerating}
+          className={`w-full py-3 text-lg font-semibold rounded-xl transition-all
+            ${isGenerating 
+              ? 'bg-gray-600 cursor-not-allowed' 
+              : 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700'}`}
         >
-          Generate AI Advice
+          {isGenerating ? 'Analyzing Transactions...' : 'Generate Personalized Advice'}
         </button>
-      )}
-
-      {aiAdvice && (
-        <div className="mt-4 p-4 border rounded bg-gray-900">
-          <div className="flex justify-between items-center">
-            <h2 className="text-lg font-bold">AI Advice:</h2>
-            <div className="flex space-x-2">
-              <button 
-                onClick={handleCopyAdvice} 
-                aria-label="Copy AI advice" 
-                className="hover:text-pink-500 hover:scale-110 transition-transform duration-300"
-              >
-                <FaRegCopy className="cursor-pointer text-xl" />
+      ) : (
+        <div className="mt-6 p-6 border border-gray-600 rounded-xl bg-gray-900 relative">
+          <div className="flex justify-between items-start mb-4">
+            <div>
+              <h2 className="text-xl font-bold mb-2">AI Financial Report</h2>
+              <p className="text-sm text-gray-400">
+                Based on {data.transactions.length} transactions
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={handleCopyAdvice} title="Copy advice" className="hover:text-purple-400 p-2">
+                <FaRegCopy className="text-xl" />
               </button>
-              <button 
-                onClick={handleSpeakAdvice} 
-                aria-label="Listen to AI advice" 
-                className="hover:text-pink-500 hover:scale-110 transition-transform duration-300"
-              >
-                <FaMicrophone className="cursor-pointer text-xl" />
+              <button onClick={handleSpeakAdvice} title="Read aloud" className="hover:text-purple-400 p-2">
+                <FaMicrophone className="text-xl" />
+              </button>
+              <button onClick={handleGenerateAdvice} title="Regenerate" className="hover:text-purple-400 p-2">
+                <FaRedoAlt className="text-xl" />
               </button>
             </div>
           </div>
-          <p>{aiAdvice}</p>
+          <div className="prose prose-invert max-w-none">
+            {aiAdvice.split('\n').map((line, i) => (
+              <p key={i} className="mb-3 text-gray-100">{line}</p>
+            ))}
+          </div>
+          <div className="mt-6 flex justify-between items-center text-sm">
+            <span className="text-gray-400">
+              {new Date().toLocaleDateString()} Analysis
+            </span>
+            <button onClick={() => setAiAdvice('')} className="text-purple-400 hover:text-purple-300">
+              Start New Analysis
+            </button>
+          </div>
         </div>
       )}
     </div>

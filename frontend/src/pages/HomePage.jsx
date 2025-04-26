@@ -12,6 +12,7 @@ import Cards from "../components/Cards";
 import TransactionForm from "../components/TransactionForm";
 import Charts from "../components/Charts";
 import Advice from "../components/Advice";
+import Chatbot from '../components/Chatbot'
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
@@ -140,6 +141,7 @@ const HomePage = () => {
         <Advice />
         
       </div>
+      <Chatbot />
     </>
   );
 };
