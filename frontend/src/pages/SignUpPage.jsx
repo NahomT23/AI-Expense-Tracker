@@ -6,11 +6,6 @@ import { useMutation } from "@apollo/client";
 import { SIGN_UP, LOGIN } from "../graphql/mutations/user.mutation";
 import toast from "react-hot-toast";
 
-
-const USERNAME = import.meta.env.VITE_API_USERNAME
-const PASSWORD = import.meta.env.VITE_API_PASSWORD
-
-
 const SignUpPage = () => {
   const [signUpData, setSignUpData] = useState({
     name: "",
@@ -62,8 +57,8 @@ const SignUpPage = () => {
       await login({
         variables: {
           input: {
-            username: USERNAME,
-            password: PASSWORD
+            username: 'Sarah',
+            password: 'abc123'
           },
         },
       });

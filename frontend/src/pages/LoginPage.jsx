@@ -6,13 +6,6 @@ import { LOGIN } from "../graphql/mutations/user.mutation";
 import toast from "react-hot-toast";
 
 
-
-const USERNAME = import.meta.env.VITE_API_USERNAME;
-const PASSWORD = import.meta.env.VITE_API_PASSWORD;
-
-
-console.log('username: ', USERNAME)
-
 const LoginPage = () => {
   const [loginData, setLoginData] = useState({
     username: "",
@@ -52,8 +45,8 @@ const LoginPage = () => {
       await login({
         variables: {
           input: {
-            username: USERNAME,
-            password: PASSWORD
+            username: 'Sarah',
+            password: 'abc123'
           },
         },
       });
