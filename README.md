@@ -19,6 +19,7 @@ Track your income, budget, and expenses all in one place and get personalized fi
 - 🔐 Secure user authentication with Passport.js
 - 🌐 GraphQL API integration
 - 🎨 Responsive UI with React and Tailwind CSS
+- 🤖 AI-based Chatbot for transaction insights
 
 ---
 
