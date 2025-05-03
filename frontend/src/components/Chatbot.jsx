@@ -38,7 +38,8 @@ const Chatbot = () => {
   
     // REMEMBER TO CHANGE IT TO LOCALHOST 4000 HWEN TESTING
     try {
-        const res = await fetch("https://ai-expense-tracker-4.onrender.com/api/chat", {
+        // const res = await fetch("https://ai-expense-tracker-4.onrender.com/api/chat", {
+          const res = await fetch("http://localhost:4000/api/chat", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
